@@ -1,0 +1,218 @@
+---
+title: "678 midterm project"
+author: "Haoqi Wang"
+date: "12/10/2020"
+geometry: "left=2cm,right=2cm,top=2cm,bottom=2cm"
+output:
+  pdf_document:
+    keep_tex: yes  
+    latex_engine: xelatex
+    fig_caption: true
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(
+ggplot2,
+knitr,
+arm,
+data.table,
+gridExtra,
+see,
+dplyr,
+stringr,
+performance,
+corrplot,
+lme4
+)
+```
+# 1.Abstract
+
+The dataset (https://www.kaggle.com/pavansanagapati/ad-displayclick-data-on-taobaocom) that I found is from kaggle and it is a dataset of predicting the click rate about display ads. And it displayed on the website of Taobao, which is the most famous shopping apps in China. The dataset is offered by the company of Alibaba. In the dataset, they randomly sampled 1140000 users from the website of Taobao for 8 days of ad display. I will predict the  clicking rate for different user group on the ad based on the user's history shopping behavior by using this data.
+
+# 2.Introduction
+
+A company wants to know the CTR ( Click Through Rate ) in order to identify whether spending their money on digital advertising worth it or not. A higher CTR represents more interest in that specific campaign, whereas a lower CTR can show that the ad may not be as relevant. High CTRs are important because they show that more people are clicking through to the website. 
+
+So I plan to use this dataset to do data analysis in order to help the company to make efficient decisions. Since there are many differences in user value and consumption habits between different user groups, the advertising strategies for different user groups are also not the same. The preliminary question that I am going to try to answer is what is the factor that influence on the number of clicks.
+  
+# 3.Data Description
+
+## 3.1 Data Content & Data interpretation
+
+The data was downloaded from Kaggle and was cleaned and processed in R (all the detailed codes are in the file: Supplementary R code.Rmd). There are three datasets: `raw_sample`,`user_profile` and `ad_feature`. Since the datasets have large number of observations, I combined the three datasets by `user` and `adgroup_id`. However, the new dataset is still too large to predict, I used `new_user_class_level` and `shopping_level` to filter the data. Then I got the subset - click.csv
+
+`clk`: click or not: 0- not click, 1- click
+`date`: the date of clicking
+`gender`: the gender of the person who click the ad: 0-  female, 1-male
+`age_level`: the age level of the user
+`shopping_level`: the shopping level of the user: 1- shallow users, 2- moderate users, 3- deep users
+`occupation`: the educational level of the user: 1- not college student 2- college student
+`new_user_class_level`: the city level
+`price`: the price of goods
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+click<-read.csv("/Users/wanghaoqi/Desktop/2020 Fall/MA678/midterm project/click.csv")
+```
+
+## 3.2 EDA
+
+Firstly, in order to find the initial relationship between the number of clicking and other factors, I draw the four figures to show the Click-through rate, which is grouped by different factors ,like `gender`, `age`, `occupation` and `price`. We can see that the female click the ads more than the male, the user who are the college students click the ads more than the user who are not the college students. Generally, the user are older, the Click-through rate is roughly higher. Moreover, Click-through rate is inversely proportional to the price of the goods.
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+
+#gender
+click$gender[click$gender==1]<-"0"
+click$gender[click$gender==2]<-"1"
+click$gender<-as.factor(click$gender)
+b<-click%>% group_by(gender)%>% summarise(percent=sum(clk)/n()*100)
+p2<-ggplot(data = b,aes(x=gender,y=percent))  + 
+  geom_point()+
+  labs(title = "distribution of click rate by gender",x="Gender",ylab="Click percentage(%)")
+
+#age
+c<-click%>% group_by(age_level)%>% summarise(percent=sum(clk)/n()*100)
+p3<-ggplot(data = c,aes(x=age_level,y=percent))  + 
+  geom_point()+
+  geom_line()+
+  labs(title = "distribution of click rate by age",x="Age",ylab="Click percentage(%)")
+
+#occupation
+click$occupation<-as.factor(click$occupation)
+d<-click%>% group_by(occupation)%>% summarise(percent=sum(clk)/n()*100)
+p4<-ggplot(data = d,aes(x=occupation,y=percent))  + 
+  geom_point()+
+  labs(title = "distribution of click rate by occupation",x="Occupation",ylab="Click percentage(%)")
+
+#price
+e<-click%>% group_by(price)%>% summarise(percent=sum(clk)/n()*100)
+p5<-ggplot(data = e,aes(x=price,y=percent))  + 
+  geom_smooth()+
+  labs(title = "distribution of click rate by price",x="Price",ylab="Click percentage(%)")
+
+grid.arrange(p2,p3,p4,p5,ncol=2)
+
+```
+I also did the corrplot to dive deep into the relationship, but the results shows there is not obvious relationship between the Click-through rate and other factors.
+
+```{r ,warning = FALSE, message = FALSE, echo = FALSE,fig.height=4, fig.width=4}
+click<-click[,-c(2,5,7)]
+click$gender<-as.numeric(click$gender)
+click$occupation<-as.numeric(click$occupation)
+
+C <- cor(click,method = "spearman")
+corrplot(C)
+```
+
+# 4.Modeling and Validation
+
+## 4.1 Logistics Regression & Model check
+
+The response variable is whether the user click the ads or not, which is the binary variable. So I choose the logistics regression to fit. 
+
+logit(clk) = -2.73696 + 0.09617*gender1 + 0.05330*age_level1 - 0.01066*age_level2 + 0.07176*age_level3 - 0.04066*age_level4 + 0.019291*age_level5 + 0.34237*age_level6 - 0.05807*log(price) + 0.07833*occupation1.
+
+```{r,warning = FALSE, message = FALSE, echo = FALSE}
+click$gender[click$gender==1]<-"0"
+click$gender[click$gender==2]<-"1"
+
+click$occupation[click$occupation==1]<-"0"
+click$occupation[click$occupation==2]<-"1"
+click$age_level<-as.character(click$age_level)
+```
+
+```{r,warning = FALSE, message = FALSE, echo = FALSE,fig.height=2,fig.width=4,include=0}
+fit1<-glm(clk~gender+age_level+log(price)+occupation,data=click,family=binomial(link="logit"))
+summary(fit1)
+```
+```{r,warning = FALSE, message = FALSE, echo = FALSE,fig.height=2,fig.width=4}
+binnedplot(predict(fit1), resid(fit1,type="response"))
+```
+
+## 4.2 Multilevel Logistics Regression & Model check
+I tried the multilevel logistics regression with varying intercepts.
+
+clk~factor(gender)+(1|age_level)+log(price)+factor(occupation)
+
+```{r,warning = FALSE, message = FALSE, echo = FALSE,fig.height=2,fig.width=4,include=0}
+fit2<-glmer(clk~factor(gender)+(1|age_level)+log(price)+factor(occupation),data=click, family=binomial(link="logit"))
+summary(fit2)
+```
+```{r,warning = FALSE, message = FALSE, echo = FALSE,fig.height=2,fig.width=4}
+binnedplot(predict(fit2), resid(fit2,type="response"))
+```
+
+Then I tried the multilevel logistics regression with varying intercepts.
+
+clk~factor(gender)+(price-1|age_level)+factor(occupation)
+
+```{r,warning = FALSE, message = FALSE, echo = FALSE,fig.height=2,fig.width=4,include=0}
+fit3<-glmer(clk~factor(gender)+(price-1|age_level)+factor(occupation),data=click, family=binomial(link="logit"))
+summary(fit3)
+```
+```{r,warning = FALSE, message = FALSE, echo = FALSE,fig.height=2,fig.width=4}
+binnedplot(predict(fit3), resid(fit3,type="response"))
+```
+
+## 4.3 Model Selection
+
+Since the result of the residual plot are gradually same, so I did the anova test to check which multilevel model is much better. I compared the AIC, the AIC of fit2 (49103) is smaller than the fit3 (49132). To sum up, the fit2 model is the best fit.
+
+```{r,warning = FALSE, message = FALSE, echo = FALSE,include=0}
+anova(fit2,fit3)
+```
+
+# 5.Discussion
+
+## 5.1 Results & Discussion
+
+1. In the Logistics Regression, the p-value of the gender and price are significant, but the p-vlue of the other two factors age_level and occupation are not signicant. But we can interpret the model that I showed in the logistics regression:
+
+logit(clk) = -2.73696 + 0.09617*gender1 + 0.05330*age_level1 - 0.01066*age_level2 + 0.07176*age_level3 - 0.04066*age_level4 + 0.019291*age_level5 + 0.34237*age_level6 - 0.05807*log(price) + 0.07833*occupation1.
+
+2. In the Multilevel Logistics Regression, `age_level` is the fixed effect factors, and `gender`, `occupation`,and `price` are the random effect factor to predict whether the user click the ads or not.
+
+The estimate for log(price) of -0.05616 means that a 1 unit increase in log(price) is associated with a 0.05616 decrease in the log-odds of clk being 1, compared to clk being 0. If we exponentiate this number then we obtain the odds ratio of 0.9453879, which means that for a 1 unit increase in log(price) we expect to see (approximately) a 6% decrease in the odds of clk being 1. 
+
+The estimate for factor(gender)1 of 0.09489 means that Gender=female is associated with 0.09489 higher log-odds than the other male group of clk being 1, compared to clk being 0. 
+
+The estimate for factor(occupation)1 of 0.06998 means that occupation=college student is associated with 0.06998 higher log-odds than the other group of clk being 1, compared to clk being 0. 
+
+To sum up, the female user click the ads more than the male user, the college student click the ads more than the male user, the price goes up, the click rate will goes down. But the relationship are not very obvious due to the limitation of the project.
+
+## 5.2 Limitation & Future Direction
+
+Since my dataset is from three big dataset and I combined them into one dataset, there will be some other variables that may have influence on the click rate, like the different category of the ads, if the good is the luxury good, most of users may mot click them frequently compared with the daily necessities. I did not consider this variable in my project. Moreover, the brand of the same category good will also influence on the click rate. Secondly, the number of data are not same, such as the number of the user who is not the college student is lager than the number of the user who is the college student, so the sample size has the large difference, which may influence the result.
+
+This time, I filtered the data by using `new_user_class_level` and `shopping_level`. I will try the different subset of the dataset, which may change the result due to the big sample size.
+
+
+
+
+
+
+
+
+
+
+\newpage
+
+## Appendix
+fit1
+```{r,warning = FALSE, message = FALSE, echo = FALSE,fig.height=2,fig.width=4}
+fit1<-glm(clk~gender+age_level+log(price)+occupation,data=click,family=binomial(link="logit"))
+summary(fit1)
+```
+fit2
+```{r,warning = FALSE, message = FALSE, echo = FALSE,fig.height=2,fig.width=4}
+fit2<-glmer(clk~factor(gender)+(1|age_level)+log(price)+factor(occupation),data=click, family=binomial(link="logit"))
+summary(fit2)
+```
+fit3
+```{r,warning = FALSE, message = FALSE, echo = FALSE,fig.height=2,fig.width=4}
+fit3<-glmer(clk~factor(gender)+(price-1|age_level)+factor(occupation),data=click, family=binomial(link="logit"))
+summary(fit3)
+```
+model selection
+```{r,warning = FALSE, message = FALSE, echo = FALSE,include=0}
+anova(fit2,fit3)
+```
